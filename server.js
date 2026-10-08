@@ -7,7 +7,8 @@ const rag = require('./rag');
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
-
+const rateLimit = require('express-rate-limit');
+app.use('/api/', rateLimit({ windowMs: 60 * 1000, max: 15, message: { error: 'Too many requests. Wait a minute and try again.' } }));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
