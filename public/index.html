@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DocMind</title>
+<style>
+:root{--bg:#f2f4f7;--panel:#fff;--ink:#16202b;--muted:#5d6b7a;--line:#d9dee5;--accent:#0f5fd7;--src:#eef3fb}
+@media (prefers-color-scheme:dark){:root{--bg:#10151b;--panel:#18202a;--ink:#e8edf2;--muted:#93a1b0;--line:#2a3542;--accent:#6aa5ff;--src:#1c2735}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "Segoe UI",system-ui,sans-serif}
+.app{display:grid;grid-template-columns:300px 1fr;min-height:100vh}
+aside{padding:24px;border-right:1px solid var(--line);background:var(--panel)}
+h1{margin:0 0 4px;font:700 26px Georgia,serif}
+.tag{margin:0 0 24px;color:var(--muted);font-size:14px}
+.drop{display:block;border:1.5px dashed var(--line);border-radius:6px;padding:18px;text-align:center;cursor:pointer;color:var(--muted);font-size:14px}
+.drop:hover,.drop:focus-within{border-color:var(--accent);color:var(--ink)}
+.drop input{display:none}
+ul{list-style:none;margin:20px 0 0;padding:0}
+li{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+li small{color:var(--muted)}
+li button{background:none;border:0;color:var(--muted);cursor:pointer;font-size:18px}
+li button:hover{color:#d33}
+main{display:flex;flex-direction:column;height:100vh}
+#chat{flex:1;overflow-y:auto;padding:24px;max-width:780px;width:100%;margin:0 auto}
+.empty{color:var(--muted);margin-top:15vh;text-align:center}
+.q{font-weight:600;margin:24px 0 8px}
+.a{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:14px 16px;white-space:pre-wrap}
+.a.err{border-color:#d33;color:#d33}
+details{margin-top:8px;font-size:14px;color:var(--muted)}
+summary{cursor:pointer}
+.src{background:var(--src);border-radius:6px;padding:10px 12px;margin-top:6px;color:var(--ink)}
+.src b{display:block;font-size:13px;color:var(--muted);margin-bottom:2px}
+form{display:flex;gap:8px;padding:16px 24px;border-top:1px solid var(--line);background:var(--panel)}
+input[type=text]{flex:1;padding:12px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:inherit}
+button.go{padding:0 20px;border:0;border-radius:6px;background:var(--accent);color:#fff;font:600 15px inherit;cursor:pointer}
+button.go:disabled{opacity:.5;cursor:wait}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media(max-width:760px){.app{grid-template-columns:1fr}aside{border-right:0;border-bottom:1px solid var(--line)}main{height:auto;min-height:70vh}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <h1>DocMind</h1>
+    <p class="tag">Ask questions about your own documents.</p>
+    <label class="drop"><input id="file" type="file" accept=".pdf,.txt,.md"><span id="dropText">Add a PDF, TXT or MD file</span></label>
+    <ul id="docs"></ul>
+  </aside>
+  <main>
+    <div id="chat"><p class="empty" id="empty">Add a document, then ask it a question.</p></div>
+    <form id="form">
+      <input type="text" id="q" placeholder="What does the document say about..." autocomplete="off" required>
+      <button class="go" id="send">Ask</button>
+    </form>
+  </main>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const md = (s) => esc(s)
+  .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+  .replace(/^\s*\*\s+(.+)$/gm, '• $1');
+async function api(url, opts) {
+  const res = await fetch(url, opts);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Something went wrong.');
+  return data;
+}
+
+async function loadDocs() {
+  const docs = await api('/api/docs');
+  $('docs').innerHTML = docs.map((d) =>
+    `<li><span title="${esc(d.docName)}">${esc(d.docName)} <small>${d.chunks} chunks</small></span><button data-id="${d.docId}" aria-label="Remove ${esc(d.docName)}">×</button></li>`).join('');
+}
+
+$('docs').onclick = async (e) => {
+  if (e.target.dataset.id) { await api('/api/docs/' + e.target.dataset.id, { method: 'DELETE' }); loadDocs(); }
+};
+
+$('file').onchange = async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  const fd = new FormData(); fd.append('file', f);
+  $('dropText').textContent = 'Indexing ' + f.name + '...';
+  try { await api('/api/upload', { method: 'POST', body: fd }); await loadDocs(); }
+  catch (err) { alert(err.message); }
+  $('dropText').textContent = 'Add a PDF, TXT or MD file';
+  e.target.value = '';
+};
+
+$('form').onsubmit = async (e) => {
+  e.preventDefault();
+  const question = $('q').value.trim(); if (!question) return;
+  $('empty')?.remove(); $('q').value = ''; $('send').disabled = true;
+  const chat = $('chat');
+  chat.insertAdjacentHTML('beforeend', `<div class="q">${esc(question)}</div>`);
+  const box = document.createElement('div'); box.className = 'a'; box.textContent = 'Searching your documents...';
+  chat.appendChild(box);
+  try {
+    const r = await api('/api/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question }) });
+    box.innerHTML = md(r.answer);
+    box.insertAdjacentHTML('afterend', `<details><summary>${r.sources.length} sources used</summary>${r.sources.map((s) =>
+      `<div class="src"><b>[${s.n}] ${esc(s.doc)} (match ${s.score})</b>${esc(s.text)}</div>`).join('')}</details>`);
+  } catch (err) { box.textContent = err.message; box.classList.add('err'); }
+  $('send').disabled = false; chat.scrollTop = chat.scrollHeight;
+};
+
+loadDocs();
+</script>
+</body>
+</html>
