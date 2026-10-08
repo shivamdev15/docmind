@@ -59,9 +59,11 @@ button.go:disabled{opacity:.5;cursor:wait}
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
 const md = (s) => esc(s)
   .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
   .replace(/^\s*\*\s+(.+)$/gm, '• $1');
+
 async function api(url, opts) {
   const res = await fetch(url, opts);
   const data = await res.json();
